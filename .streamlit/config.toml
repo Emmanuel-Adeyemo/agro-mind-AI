@@ -1,0 +1,7 @@
+[server]
+
+enableCORS = false
+enableXsrfProtection = false
+
+# set max upload size to ensure your paper uploads work
+maxUploadSize = 50
