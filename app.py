@@ -12,6 +12,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_classic.document_loaders import PyPDFLoader
 from langchain_classic.text_splitter import RecursiveCharacterTextSplitter
+from langchain_pinecone import PineconeVectorStore
 
 # UI layout tuning
 st.set_page_config(
@@ -62,6 +63,9 @@ st.markdown("""
 
 load_dotenv()
 
+openai_api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
+pinecone_api_key = os.getenv("PINECONE_API_KEY") or st.secrets.get("PINECONE_API_KEY")
+
 
 # load and cache pre-baked search indices
 @st.cache_resource
@@ -70,13 +74,18 @@ def load_core_retrievers():
     CHROMADB_DIR = ROOT / 'chromadb'  # Point to your correct folder name
     BM25_PATH = ROOT / 'bm25_index.pkl'
 
-    if not CHROMADB_DIR.exists() or not BM25_PATH.exists():
-        st.error(f" Vector index files not found! Checked: {CHROMADB_DIR}")
-        st.stop()
-
     # load vectors in chromadb
-    embeddings = OpenAIEmbeddings(model='text-embedding-3-large')
-    vector_store = Chroma(persist_directory=str(CHROMADB_DIR), embedding_function=embeddings)
+    embeddings = OpenAIEmbeddings(model='text-embedding-3-large', api_key=openai_api_key)
+
+    vector_store = PineconeVectorStore(
+        index_name="qgen-ai-index",
+        embedding=embeddings,
+        pinecone_api_key=pinecone_api_key
+    )
+
+    if not BM25_PATH.exists():
+        st.error(f"BM25 index file not found! Checked: {BM25_PATH}")
+        st.stop()
 
     # load keyword BM25 matrix
     with open(BM25_PATH, 'rb') as f:
