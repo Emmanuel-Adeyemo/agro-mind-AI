@@ -13,3 +13,4 @@ chromadb/
 *.pickle
 
 .DS_Store
+bm25_index.pkl.gz
