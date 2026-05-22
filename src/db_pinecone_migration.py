@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
@@ -12,8 +13,8 @@ pinecone_api_key = os.getenv("PINECONE_API_KEY")
 if not openai_api_key or not pinecone_api_key:
     raise ValueError("Missing API keys! Please check that OPENAI_API_KEY and PINECONE_API_KEY are set in your .env file.")
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-CHROMADB_DIR = os.path.join(ROOT, 'chromadb')
+ROOT = Path(__file__).resolve().parent.parent
+CHROMADB_DIR = ROOT / 'chromadb'
 
 embeddings = OpenAIEmbeddings(model='text-embedding-3-large')
 local_db = Chroma(persist_directory=CHROMADB_DIR, embedding_function=embeddings)
