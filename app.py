@@ -41,7 +41,7 @@ st.markdown("""
         border-radius: 6px;
         margin-bottom: 15px;
     }
-    
+
     /* Floating GitHub Link Styling */
     .github-corner-link {
         position: fixed;
@@ -55,7 +55,7 @@ st.markdown("""
         color: #0366d6; /* Turns professional blue on hover */
     }
     </style>
-    
+
     <a class="github-corner-link" href="https://github.com/Emmanuel-Adeyemo/agro-mind-AI" target="_blank" title="View Source on GitHub">
         <svg height="24" aria-hidden="true" viewBox="0 0 16 16" version="1.1" width="24" data-view-component="true" fill="currentColor">
             <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82a7.42 7.42 0 0 0-4 0c-1.53-1.04-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.16.73.72.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path>
@@ -68,30 +68,14 @@ load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
 pinecone_api_key = os.getenv("PINECONE_API_KEY") or st.secrets.get("PINECONE_API_KEY")
 
-uploaded_file = st.sidebar.file_uploader("Upload an external paper", type=["pdf", "txt"])
-
-if uploaded_file is not None:
-    # os.path.join(".", "uploads", uploaded_file.name) -> triggers 403
-
-    # this forces the path into the system's /tmp directory
-    TEMP_DIR = Path("/tmp")
-    file_path = TEMP_DIR / uploaded_file.name
-
-    # write to the safe directory
-    with open(file_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-
-    st.sidebar.success(f"File safely staged in container memory!")
-
 
 # load and cache pre-baked search indices
 @st.cache_resource
 def load_core_retrievers():
     ROOT = Path(__file__).resolve().parent
-    # CHROMADB_DIR = ROOT / 'chromadb'  # Point to your correct folder name
     BM25_PATH = ROOT / 'bm25_index.pkl.gz'
 
-    # load vectors in chromadb
+    # load vectors in pinecone
     embeddings = OpenAIEmbeddings(model='text-embedding-3-large', api_key=openai_api_key)
 
     vector_store = PineconeVectorStore(
@@ -113,8 +97,10 @@ def load_core_retrievers():
 
 @st.cache_data(show_spinner=False)
 def process_new_pdfs(file_bytes, file_name):
-    # write uploaded pdf to a temporary disk file for the PyPDFLoader to read
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+
+    # hf containers have a read-only root system, making /tmp the only open sandbox
+    os.makedirs("/tmp", exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir="/tmp", delete=False, suffix='.pdf') as tmp_file:
         tmp_file.write(file_bytes)
         tmp_file_path = tmp_file.name
 
@@ -124,7 +110,7 @@ def process_new_pdfs(file_bytes, file_name):
 
         cover_page = pages[0].page_content[:3000] if pages else ''
 
-        get_llm = ChatOpenAI(model='gpt-4o-mini', temperature=0)
+        get_llm = ChatOpenAI(model='gpt-4o-mini', temperature=0, api_key=openai_api_key)
         prompt = ChatPromptTemplate.from_messages([
             ("system", (
                 "You are an expert digital archivist for an agricultural genomics library.\n"
@@ -153,14 +139,14 @@ def process_new_pdfs(file_bytes, file_name):
 
         return chunks
     finally:
-        # Clean up the temporary operating system file immediately
+        # clean up the temp operating system file immediately
         if os.path.exists(tmp_file_path):
             os.remove(tmp_file_path)
 
 
 # initialize backend engine components
 core_vector_ret, core_bm25_retriever = load_core_retrievers()
-get_llm = ChatOpenAI(model='gpt-4o-mini', temperature=0)
+get_llm = ChatOpenAI(model='gpt-4o-mini', temperature=0, api_key=openai_api_key)
 
 # initialize persistent session state trackers
 if 'history' not in st.session_state:
@@ -173,7 +159,7 @@ if 'active_query' not in st.session_state:
     st.session_state.active_query = ""
 
 
-@st.cache_data(ttl=60) # cache for 1 minute so API not spammed on every click
+@st.cache_data(ttl=60)  # cache for 1 minute so API not spammed on every click
 def get_live_database_metrics(api_key, index_name="qgen-ai-index"):
     try:
         pc = Pinecone(api_key=api_key)
@@ -186,12 +172,12 @@ def get_live_database_metrics(api_key, index_name="qgen-ai-index"):
         if total_chunks == 0:
             return 0, 0
 
-        #
+        # construct vector lookup sweeps
         dummy_vector = [0.0] * 3072
 
         query_response = index.query(
             vector=dummy_vector,
-            top_k=10000,  # Set high enough to sweep all your chunks
+            top_k=10000,
             include_metadata=True
         )
 
@@ -199,10 +185,8 @@ def get_live_database_metrics(api_key, index_name="qgen-ai-index"):
         unique_articles = set()
         for match in query_response.get('matches', []):
             metadata = match.get('metadata', {})
-
             source_file = metadata.get('source') or metadata.get('file_name')
             if source_file:
-
                 unique_articles.add(os.path.basename(source_file))
 
         total_articles = len(unique_articles) if unique_articles else 0
@@ -212,9 +196,9 @@ def get_live_database_metrics(api_key, index_name="qgen-ai-index"):
         # fallback
         return 0, 0
 
+
 # get count
 total_articles, total_chunks = get_live_database_metrics(pinecone_api_key)
-
 
 # sidebar column (session history and library inventory)
 with st.sidebar:
@@ -224,33 +208,12 @@ with st.sidebar:
 
     st.subheader('System Status')
 
-    # try:
-    #     # get all document meta stored in chromadb
-    #     all_docs = core_vector_ret.get()
-    #
-    #     if all_docs and 'metadatas' in all_docs and all_docs['metadatas']:
-    #         # extract unique file paths/names from meta list
-    #         unique_articles = {
-    #             meta.get('source')
-    #             for meta in all_docs['metadatas']
-    #             if meta and meta.get('source')
-    #         }
-    #         total_articles = len(unique_articles)
-    #         total_chunks = len(all_docs['metadatas'])
-    #     else:
-    #         total_articles = 0
-    #         total_chunks = 0
-    #
-    # except Exception:
-    #     # fallback if the chromadb is empty or uninitialized
-    #     total_articles = 0
-    #     total_chunks = 0
-
     col1, col2 = st.columns(2)
     with col1:
         st.metric(label="Core Articles", value=f"📚 {total_articles}")
     with col2:
         st.metric(label="Total Chunks", value=f"🧩 {total_chunks}")
+
     current_k = st.session_state.get('k_depth', 5)
     current_v = st.session_state.get('vector_percentage', 50)
     current_b = 100 - current_v
@@ -355,7 +318,6 @@ with st.form(key="search_query_form", clear_on_submit=False):
         key='fresh_query_input'
     )
 
-    # enter should also work for submission
     submit_pipeline = st.form_submit_button(label="Execute Pipeline", type="primary")
 
 if submit_pipeline and user_query:
@@ -373,7 +335,7 @@ if submit_pipeline and user_query:
                 weights=[v_weight, k_weight]
             )
         elif scope == 'Uploaded Paper Only':
-            embeddings = OpenAIEmbeddings(model='text-embedding-3-large')
+            embeddings = OpenAIEmbeddings(model='text-embedding-3-large', api_key=openai_api_key)
             temp_db = Chroma.from_documents(temp_chunks, embeddings)
             temp_vector_retriever = temp_db.as_retriever(search_kwargs={'k': k_depth})
             temp_bm25_retriever = BM25Retriever.from_documents(temp_chunks)
@@ -384,7 +346,7 @@ if submit_pipeline and user_query:
                 weights=[v_weight, k_weight]
             )
         else:  # blend both together
-            embeddings = OpenAIEmbeddings(model='text-embedding-3-large')
+            embeddings = OpenAIEmbeddings(model='text-embedding-3-large', api_key=openai_api_key)
             temp_db = Chroma.from_documents(temp_chunks, embeddings)
             temp_vector_retriever = temp_db.as_retriever(search_kwargs={'k': k_depth})
             temp_bm25_retriever = BM25Retriever.from_documents(temp_chunks)
@@ -413,7 +375,6 @@ if submit_pipeline and user_query:
                 "You are an elite AI Research Assistant specializing in quantitative genetics.\n\n"
                 "Your task is to answer the User Query using ONLY the text segments provided in the Context block.\n\n"
                 "CRITICAL GUARDRAILS:\n"
-
                 "1. If the text details multiple concepts (e.g., different statistical models) separately but does not explicitly compare them, "
                 "you ARE permitted to use your advanced domain knowledge to connect the dots, synthesize their differences, and perform a rigorous comparative analysis.\n"
                 "However, you must clearly distinguish between facts directly pulled from the paper and your own expert synthesis."
@@ -428,7 +389,6 @@ if submit_pipeline and user_query:
                 "5. **Handle Missing Specifics Safely:** If the query asks for a specific value or comparison at a certain point and the text only provides it for one trait, explicitly state what is present and specify exactly what is missing."
                 "6. **Strict Verbatim Grounding:** Do not guess, smooth over discrepancies, or generalize. Every name, location, and numeric assertion must map cleanly to an explicit statement in the context."
                 "Context:\n{context}"
-
             )),
             ("human", "{query}")
         ])
