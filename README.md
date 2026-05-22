@@ -29,7 +29,7 @@ then forcing the AI to answer using only those proven facts—completely elimina
 
 ## Live Deployment
 The application is fully containerized and deployed publicly:
-* **Interactive Dashboard:** [Link to your Hugging Face Space]
+* **Interactive Dashboard:** https://huggingface.co/spaces/eadey/QGen-AI
 * **Backend Architecture:** Streamlit + Docker + ChromaDB + BM25 Hybrid Retrieval
 
 ---
