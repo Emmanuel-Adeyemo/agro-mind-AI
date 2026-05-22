@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import pickle
+import gzip
 from pathlib import Path
 import tempfile
 from dotenv import load_dotenv
@@ -71,8 +72,8 @@ pinecone_api_key = os.getenv("PINECONE_API_KEY") or st.secrets.get("PINECONE_API
 @st.cache_resource
 def load_core_retrievers():
     ROOT = Path(__file__).resolve().parent
-    CHROMADB_DIR = ROOT / 'chromadb'  # Point to your correct folder name
-    BM25_PATH = ROOT / 'bm25_index.pkl'
+    # CHROMADB_DIR = ROOT / 'chromadb'  # Point to your correct folder name
+    BM25_PATH = ROOT / 'bm25_index.pkl.gz'
 
     # load vectors in chromadb
     embeddings = OpenAIEmbeddings(model='text-embedding-3-large', api_key=openai_api_key)
@@ -88,7 +89,7 @@ def load_core_retrievers():
         st.stop()
 
     # load keyword BM25 matrix
-    with open(BM25_PATH, 'rb') as f:
+    with gzip.open(BM25_PATH, 'rb') as f:
         bm25_retriever = pickle.load(f)
 
     return vector_store, bm25_retriever
