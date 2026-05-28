@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# ROOT = Path(__file__).resolve().parent.parent
 # get logger, check if it has handlers, if not, set format and level, then add handler and save
 def logging_setup(name='QGenAI'):
 
@@ -25,8 +25,8 @@ def logging_setup(name='QGenAI'):
     logger.addHandler(st_handler)
 
     # log out
-    tmp = ROOT / 'tmp'
-    log_dir = tmp / 'qgen_log'
+    # tmp = ROOT / 'tmp'
+    log_dir = Path('../../tmp/qgen_log')
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / 'qgen.log'
 
