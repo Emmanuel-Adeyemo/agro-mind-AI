@@ -26,7 +26,7 @@ def logging_setup(name='QGenAI'):
 
     # log out
     # tmp = ROOT / 'tmp'
-    log_dir = Path('../../tmp/qgen_log')
+    log_dir = Path('tmp/qgen_log')
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / 'qgen.log'
 
